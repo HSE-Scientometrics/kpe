@@ -108,7 +108,7 @@ agg_df = df_filtered.groupby(["ГОД", "Подразделение_list"], as_i
 )
 
 # ---------------------
-# Построение графика
+# Построение графика с русскими подписями
 # ---------------------
 if agg_df.empty:
     st.warning("Нет данных для выбранных фильтров")
@@ -126,7 +126,8 @@ else:
         color_discrete_map=color_map,
         category_orders={"Подразделение_list": order},
         barmode="group",
-        title=f"{selected_portal_scopus}: публикации"
+        title=f"{selected_portal_scopus}: публикации",
+        labels={"Подразделение_list": "Подразделение", "publications_cnt": "Количество публикаций", "ГОД": "Год"}
     )
 
     fig_frac = px.bar(
@@ -137,7 +138,8 @@ else:
         color_discrete_map=color_map,
         category_orders={"Подразделение_list": order},
         barmode="group",
-        title=f"{selected_portal_scopus}: фракционный балл"
+        title=f"{selected_portal_scopus}: фракционный балл",
+        labels={"Подразделение_list": "Подразделение", "fractional_score_sum": "Фракционный балл", "ГОД": "Год"}
     )
 
     with col1:
