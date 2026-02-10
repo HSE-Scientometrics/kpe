@@ -6,11 +6,11 @@ from io import StringIO
 # ---------------------
 # Настройки типов публикаций
 # ---------------------
-PORTAL_TYPES = [
-    "Статья", "Труды конференций", "Монографии",
-    "Учебные пособия", "Учебники", "Сборники статей"
-]
+PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", 
+                "Учебные пособия", "Учебники", "Сборники статей"]
 SCOPUS_TYPES = ["Article", "Conference Paper", "Book"]
+
+HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
 
 # ---------------------
 # Streamlit
@@ -23,7 +23,7 @@ if uploaded_file is None:
     st.stop()
 
 # ---------------------
-# Загрузка CSV
+# Загрузка CSV с поддержкой разных кодировок
 # ---------------------
 def load_csv(uploaded_file):
     encodings = ["utf-8-sig", "utf-8", "cp1251", "windows-1251"]
@@ -40,23 +40,36 @@ def load_csv(uploaded_file):
 df = load_csv(uploaded_file)
 
 # ---------------------
-# Обработка
+# Преобразование фракционного балла
 # ---------------------
 df["Фракционный балл"] = pd.to_numeric(df["Фракционный балл"], errors="coerce").fillna(0)
-df["Подразделение_list"] = df["Подразделение (широко)"].fillna("").apply(lambda x: [i.strip() for i in x.split(";") if i.strip()])
+
+# ---------------------
+# Фильтрация по Список НИУ ВШЭ и Рец тип строгий
+# ---------------------
+df = df[df["Список НИУ ВШЭ"].isin(HSE_LIST_ALLOWED)]
+df = df[df["Рец тип строгий"] == 1]
+
+# ---------------------
+# Разбор подразделений
+# ---------------------
+df["Подразделение_list"] = df["Подразделение (широко)"].fillna("").apply(
+    lambda x: [i.strip() for i in x.split(";") if i.strip()]
+)
 df = df.explode("Подразделение_list")
-div_cnt = df.groupby("НАЗВАНИЕ")["Подразделение_list"].transform("count").replace(0,1)
-df["fractional_score_adj"] = df["Фракционный балл"] / div_cnt
-
-# Берём последние 3 года
-df = df[df["ГОД"] >= df["ГОД"].max() - 2]
-
-# Преобразуем ГОД и Подразделение в строку (для категориальных цветов)
-df["ГОД"] = df["ГОД"].astype(str)
+df = df[df["Подразделение_list"].str.lower() != "nan"]
+df = df[df["Подразделение_list"] != ""]
 df["Подразделение_list"] = df["Подразделение_list"].astype(str)
 
 # ---------------------
-# Фильтры справа (выпадающие списки)
+# Последние 3 года
+# ---------------------
+last_three_years = df["ГОД"].max() - 2
+df = df[df["ГОД"] >= last_three_years]
+df["ГОД"] = df["ГОД"].astype(str)
+
+# ---------------------
+# Фильтры справа
 # ---------------------
 col1, col2 = st.columns([4,1])
 with col2:
@@ -71,16 +84,13 @@ with col2:
         default=sorted(df["ГОД"].unique())
     )
 
-    # Фильтр подразделений без "nan"
-    div_options = sorted([x for x in df["Подразделение_list"].unique() if str(x).lower() != "nan"])
+    div_options = sorted(df["Подразделение_list"].unique())
     selected_divs = st.multiselect(
-    "Подразделения",
-    options=div_options,
-    default=div_options
+        "Подразделения",
+        options=div_options,
+        default=div_options
     )
 
-
-    # Тип публикации зависит от выбора Portal/Scopus
     types_options = PORTAL_TYPES if selected_portal_scopus == "Portal" else SCOPUS_TYPES
     selected_types = st.multiselect(
         f"Тип публикаций ({selected_portal_scopus})",
@@ -91,19 +101,23 @@ with col2:
 # ---------------------
 # Фильтрация данных
 # ---------------------
-df_filtered = df[df["ГОД"].isin(selected_years) & df["Подразделение_list"].isin(selected_divs)]
-df_filtered = df_filtered[df_filtered["Тип (по Portal)" if selected_portal_scopus == "Portal" else "Тип (по Scopus)"].isin(selected_types)]
+type_col = "Тип (по Portal)" if selected_portal_scopus == "Portal" else "Тип (по Scopus)"
+df_filtered = df[
+    df["ГОД"].isin(selected_years) &
+    df["Подразделение_list"].isin(selected_divs) &
+    df[type_col].isin(selected_types)
+]
 
 # ---------------------
 # Агрегация
 # ---------------------
 agg_df = df_filtered.groupby(["ГОД", "Подразделение_list"], as_index=False).agg(
     publications_cnt=("НАЗВАНИЕ", "nunique"),
-    fractional_score_sum=("fractional_score_adj", "sum")
+    fractional_score_sum=("Фракционный балл", "sum")
 )
 
 # ---------------------
-# Построение графика с русскими подписями
+# Построение графиков
 # ---------------------
 if agg_df.empty:
     st.warning("Нет данных для выбранных фильтров")
