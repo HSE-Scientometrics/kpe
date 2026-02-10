@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -29,16 +23,12 @@ SCOPUS_TYPES = [
 
 HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
 
-DATA_PATH = "НЦ_Ежеквартальный_реестр_2025_IV_квартал_полный.csv"
-
-
 # --------------------------------------------------
-# Загрузка и подготовка данных
+# Подготовка данных
 # --------------------------------------------------
 
-@st.cache_data
-def load_and_prepare_data():
-    reestr = pd.read_csv(DATA_PATH, sep=";")
+def prepare_base(reestr: pd.DataFrame) -> pd.DataFrame:
+    reestr = reestr.copy()
 
     # фильтры методики
     reestr = reestr[
@@ -97,7 +87,6 @@ def build_scopus_agg(reestr):
     df = explode_and_fraction(df)
     return aggregate(df)
 
-
 # --------------------------------------------------
 # Streamlit UI
 # --------------------------------------------------
@@ -109,7 +98,35 @@ st.set_page_config(
 
 st.title("Публикационная активность по подразделениям НИУ ВШЭ")
 
-reestr = load_and_prepare_data()
+st.markdown(
+    """
+    **Загрузите CSV-файл реестра публикаций НИУ ВШЭ**  
+    (разделитель `;`, структура как в ежеквартальном реестре)
+    """
+)
+
+uploaded_file = st.file_uploader(
+    "Загрузить файл реестра",
+    type=["csv"]
+)
+
+if uploaded_file is None:
+    st.info("⬆️ Загрузите CSV-файл, чтобы построить графики")
+    st.stop()
+
+# --------------------------------------------------
+# Загрузка файла → reestr
+# --------------------------------------------------
+
+@st.cache_data
+def load_uploaded_file(file):
+    return pd.read_csv(file, sep=";")
+
+reestr = load_uploaded_file(uploaded_file)
+
+# подготовка данных
+reestr = prepare_base(reestr)
+
 portal_df = build_portal_agg(reestr)
 scopus_df = build_scopus_agg(reestr)
 
@@ -161,7 +178,7 @@ def render_tab(df, title_prefix):
         filtered["Подразделение_list"].isin(order.index)
     ]
 
-    # --- Публикации ---
+    # ---------- публикации ----------
     st.subheader(f"{title_prefix}: количество публикаций")
 
     fig_pub = px.bar(
@@ -182,7 +199,7 @@ def render_tab(df, title_prefix):
 
     st.plotly_chart(fig_pub, use_container_width=True)
 
-    # --- Фракционный балл ---
+    # ---------- фракционный балл ----------
     st.subheader(f"{title_prefix}: фракционный балл")
 
     fig_frac = px.bar(
@@ -209,10 +226,6 @@ with tab1:
 
 with tab2:
     render_tab(scopus_df, "Scopus")
-
-
-# In[ ]:
-
 
 
 
