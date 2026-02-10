@@ -71,13 +71,13 @@ with col2:
         default=sorted(df["ГОД"].unique())
     )
 
-  # Фильтр подразделений без "nan"
-div_options = sorted([x for x in df["Подразделение_list"].unique() if str(x).lower() != "nan"])
-selected_divs = st.multiselect(
+    # Фильтр подразделений без "nan"
+    div_options = sorted([x for x in df["Подразделение_list"].unique() if str(x).lower() != "nan"])
+    selected_divs = st.multiselect(
     "Подразделения",
     options=div_options,
     default=div_options
-)
+    )
 
 
     # Тип публикации зависит от выбора Portal/Scopus
