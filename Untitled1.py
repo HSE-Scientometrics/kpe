@@ -3,7 +3,7 @@ import streamlit as st
 import plotly.express as px
 
 # --------------------------------------------------
-# Константы методики
+# Константы
 # --------------------------------------------------
 
 PORTAL_TYPES = [
@@ -23,34 +23,130 @@ SCOPUS_TYPES = [
 
 HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
 
+REQUIRED_COLUMNS = [
+    "Список НИУ ВШЭ",
+    "Рец тип строгий",
+    "ГОД",
+    "Подразделение (широко)",
+    "НАЗВАНИЕ",
+    "Фракционный балл",
+    "Тип (по Portal)",
+    "Тип (по Scopus)"
+]
+
+# --------------------------------------------------
+# Streamlit UI
+# --------------------------------------------------
+
+st.set_page_config(
+    page_title="Диагностика реестра НИУ ВШЭ",
+    layout="wide"
+)
+
+st.title("Диагностика и визуализация реестра НИУ ВШЭ")
+
+uploaded_file = st.file_uploader(
+    "Загрузите CSV-файл реестра (разделитель ;)",
+    type=["csv"]
+)
+
+if uploaded_file is None:
+    st.info("⬆️ Сначала загрузите CSV-файл")
+    st.stop()
+
+# --------------------------------------------------
+# Загрузка файла (с диагностикой)
+# --------------------------------------------------
+
+st.subheader("1️⃣ Загрузка файла")
+
+try:
+    reestr = pd.read_csv(uploaded_file, sep=";", encoding="cp1251")
+    st.success("Файл успешно прочитан")
+except Exception as e:
+    st.error("❌ Ошибка при чтении CSV")
+    st.exception(e)
+    st.stop()
+
+st.write("Первые строки файла:")
+st.dataframe(reestr.head())
+
+# --------------------------------------------------
+# Проверка колонок
+# --------------------------------------------------
+
+st.subheader("2️⃣ Проверка структуры файла")
+
+st.write("Найденные колонки:")
+st.code(reestr.columns.tolist())
+
+missing_cols = [c for c in REQUIRED_COLUMNS if c not in reestr.columns]
+
+if missing_cols:
+    st.error("❌ В файле отсутствуют обязательные колонки:")
+    st.code(missing_cols)
+    st.stop()
+else:
+    st.success("Все необходимые колонки присутствуют")
+
 # --------------------------------------------------
 # Подготовка данных
 # --------------------------------------------------
 
-def prepare_base(reestr: pd.DataFrame) -> pd.DataFrame:
-    reestr = reestr.copy()
+st.subheader("3️⃣ Применение фильтров методики")
 
-    # фильтры методики
+try:
     reestr = reestr[
         (reestr["Список НИУ ВШЭ"].isin(HSE_LIST_ALLOWED)) &
         (reestr["Рец тип строгий"] == 1)
     ]
+    st.success(f"После фильтрации осталось строк: {len(reestr)}")
+except Exception as e:
+    st.error("❌ Ошибка при фильтрации")
+    st.exception(e)
+    st.stop()
 
-    # последние 3 года
+# --------------------------------------------------
+# Проверка годов
+# --------------------------------------------------
+
+st.subheader("4️⃣ Проверка колонки ГОД")
+
+try:
+    st.write("Уникальные годы:", sorted(reestr["ГОД"].unique()))
     max_year = reestr["ГОД"].max()
     reestr = reestr[reestr["ГОД"] >= max_year - 2]
+    st.success(f"Используются годы: {sorted(reestr['ГОД'].unique())}")
+except Exception as e:
+    st.error("❌ Проблема с колонкой ГОД")
+    st.exception(e)
+    st.stop()
 
-    # подразделения
+# --------------------------------------------------
+# Подразделения
+# --------------------------------------------------
+
+st.subheader("5️⃣ Разбор подразделений")
+
+try:
     reestr["Подразделение_list"] = (
         reestr["Подразделение (широко)"]
         .fillna("")
         .apply(lambda x: [i.strip() for i in x.split(";") if i.strip()])
     )
+    st.success("Подразделения успешно разобраны")
+except Exception as e:
+    st.error("❌ Ошибка при разборе подразделений")
+    st.exception(e)
+    st.stop()
 
-    return reestr
+# --------------------------------------------------
+# Взрыв + фракционный балл
+# --------------------------------------------------
 
+st.subheader("6️⃣ Фракционный учёт")
 
-def explode_and_fraction(reestr: pd.DataFrame) -> pd.DataFrame:
+try:
     reestr = reestr.explode("Подразделение_list")
 
     div_cnt = (
@@ -59,173 +155,86 @@ def explode_and_fraction(reestr: pd.DataFrame) -> pd.DataFrame:
     )
 
     reestr["fractional_score_adj"] = reestr["Фракционный балл"] / div_cnt
-    reestr["publication_unit"] = 1 / div_cnt
+    st.success("Фракционный балл рассчитан")
+except Exception as e:
+    st.error("❌ Ошибка при расчёте фракционного балла")
+    st.exception(e)
+    st.stop()
 
-    return reestr
+# --------------------------------------------------
+# Агрегации
+# --------------------------------------------------
 
+st.subheader("7️⃣ Агрегации")
 
-def aggregate(reestr: pd.DataFrame) -> pd.DataFrame:
-    return (
-        reestr.groupby(
-            ["ГОД", "Подразделение_list"], as_index=False
-        )
+try:
+    portal_df = (
+        reestr[reestr["Тип (по Portal)"].isin(PORTAL_TYPES)]
+        .groupby(["ГОД", "Подразделение_list"], as_index=False)
         .agg(
             publications_cnt=("НАЗВАНИЕ", "nunique"),
             fractional_score_sum=("fractional_score_adj", "sum")
         )
     )
 
+    scopus_df = (
+        reestr[reestr["Тип (по Scopus)"].isin(SCOPUS_TYPES)]
+        .groupby(["ГОД", "Подразделение_list"], as_index=False)
+        .agg(
+            publications_cnt=("НАЗВАНИЕ", "nunique"),
+            fractional_score_sum=("fractional_score_adj", "sum")
+        )
+    )
 
-def build_portal_agg(reestr):
-    df = reestr[reestr["Тип (по Portal)"].isin(PORTAL_TYPES)]
-    df = explode_and_fraction(df)
-    return aggregate(df)
-
-
-def build_scopus_agg(reestr):
-    df = reestr[reestr["Тип (по Scopus)"].isin(SCOPUS_TYPES)]
-    df = explode_and_fraction(df)
-    return aggregate(df)
-
-# --------------------------------------------------
-# Streamlit UI
-# --------------------------------------------------
-
-st.set_page_config(
-    page_title="Публикационная активность НИУ ВШЭ",
-    layout="wide"
-)
-
-st.title("Публикационная активность по подразделениям НИУ ВШЭ")
-
-st.markdown(
-    """
-    **Загрузите CSV-файл реестра публикаций НИУ ВШЭ**  
-    (разделитель `;`, структура как в ежеквартальном реестре)
-    """
-)
-
-uploaded_file = st.file_uploader(
-    "Загрузить файл реестра",
-    type=["csv"]
-)
-
-if uploaded_file is None:
-    st.info("⬆️ Загрузите CSV-файл, чтобы построить графики")
+    st.success("Агрегации построены")
+except Exception as e:
+    st.error("❌ Ошибка при агрегациях")
+    st.exception(e)
     st.stop()
 
 # --------------------------------------------------
-# Загрузка файла → reestr
+# Графики
 # --------------------------------------------------
 
-@st.cache_data
-def load_uploaded_file(file):
-    return pd.read_csv(file, sep=";")
+st.subheader("8️⃣ Графики")
 
-reestr = load_uploaded_file(uploaded_file)
-
-# подготовка данных
-reestr = prepare_base(reestr)
-
-portal_df = build_portal_agg(reestr)
-scopus_df = build_scopus_agg(reestr)
-
-tab1, tab2 = st.tabs(["Portal", "Scopus"])
-
-
-def render_tab(df, title_prefix):
-    years = sorted(df["ГОД"].unique())
-    divisions = sorted(df["Подразделение_list"].unique())
-
-    col1, col2, col3 = st.columns([2, 4, 2])
-
-    with col1:
-        selected_years = st.multiselect(
-            "Годы",
-            years,
-            default=years
-        )
-
-    with col2:
-        selected_divs = st.multiselect(
-            "Подразделения",
-            divisions,
-            default=divisions
-        )
-
-    with col3:
-        top_n = st.selectbox(
-            "Показать подразделений",
-            [10, 15, 20, "Все"],
-            index=0
-        )
-
-    filtered = df[
-        (df["ГОД"].isin(selected_years)) &
-        (df["Подразделение_list"].isin(selected_divs))
-    ]
-
+def draw_charts(df, title):
     order = (
-        filtered.groupby("Подразделение_list")["publications_cnt"]
+        df.groupby("Подразделение_list")["publications_cnt"]
         .sum()
         .sort_values(ascending=False)
+        .index
     )
 
-    if top_n != "Все":
-        order = order.head(top_n)
-
-    filtered = filtered[
-        filtered["Подразделение_list"].isin(order.index)
-    ]
-
-    # ---------- публикации ----------
-    st.subheader(f"{title_prefix}: количество публикаций")
-
     fig_pub = px.bar(
-        filtered,
+        df,
         x="Подразделение_list",
         y="publications_cnt",
         color="ГОД",
-        category_orders={"Подразделение_list": order.index.tolist()},
-        barmode="group"
+        category_orders={"Подразделение_list": order},
+        barmode="group",
+        title=f"{title}: публикации"
     )
-
-    fig_pub.update_layout(
-        xaxis_title="Подразделение",
-        yaxis_title="Количество публикаций",
-        legend_title="Год",
-        height=450
-    )
-
-    st.plotly_chart(fig_pub, use_container_width=True)
-
-    # ---------- фракционный балл ----------
-    st.subheader(f"{title_prefix}: фракционный балл")
 
     fig_frac = px.bar(
-        filtered,
+        df,
         x="Подразделение_list",
         y="fractional_score_sum",
         color="ГОД",
-        category_orders={"Подразделение_list": order.index.tolist()},
-        barmode="group"
+        category_orders={"Подразделение_list": order},
+        barmode="group",
+        title=f"{title}: фракционный балл"
     )
 
-    fig_frac.update_layout(
-        xaxis_title="Подразделение",
-        yaxis_title="Сумма фракционного балла",
-        legend_title="Год",
-        height=450
-    )
-
+    st.plotly_chart(fig_pub, use_container_width=True)
     st.plotly_chart(fig_frac, use_container_width=True)
 
+tab1, tab2 = st.tabs(["Portal", "Scopus"])
 
 with tab1:
-    render_tab(portal_df, "Portal")
+    draw_charts(portal_df, "Portal")
 
 with tab2:
-    render_tab(scopus_df, "Scopus")
+    draw_charts(scopus_df, "Scopus")
 
-
-
+st.success("✅ Приложение отработало без ошибок")
