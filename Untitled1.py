@@ -130,4 +130,12 @@ else:
         y="fractional_score_sum",
         color="ГОД",
         color_discrete_map=color_map,
-        ca
+        category_orders={"Подразделение_list": order},
+        barmode="group",
+        title=f"{selected_portal_scopus}: фракционный балл",
+        labels={"Подразделение_list": "Подразделение", "fractional_score_sum": "Фракционный балл", "ГОД": "Год"}
+    )
+
+    with col1:
+        st.plotly_chart(fig_pub, use_container_width=True)
+        st.plotly_chart(fig_frac, use_container_width=True)
