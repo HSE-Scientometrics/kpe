@@ -68,19 +68,24 @@ df = df[df["ГОД"] >= df["ГОД"].max() - 2]
 st.subheader("Фильтры")
 
 col1, col2 = st.columns([4,1])  # левая зона для графиков, правая для фильтров
+
+# Преобразуем все подразделения в строки (если вдруг NaN или списки)
+df["Подразделение_list"] = df["Подразделение_list"].astype(str)
+
 with col2:
     selected_years = st.multiselect(
         "Выберите годы",
-        options=sorted(df["ГОД"].unique()),
-        default=sorted(df["ГОД"].unique())
+        options=sorted(df["ГОД"].dropna().unique()),
+        default=sorted(df["ГОД"].dropna().unique())
     )
     selected_divs = st.multiselect(
         "Подразделения",
-        options=sorted(df["Подразделение_list"].unique()),
-        default=sorted(df["Подразделение_list"].unique())
+        options=sorted(df["Подразделение_list"].dropna().unique()),
+        default=sorted(df["Подразделение_list"].dropna().unique())
     )
 
 df = df[df["ГОД"].isin(selected_years) & df["Подразделение_list"].isin(selected_divs)]
+
 
 # --------------------------------------------------
 # Агрегация данных
