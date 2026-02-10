@@ -71,13 +71,14 @@ with col2:
         default=sorted(df["ГОД"].unique())
     )
 
-    # Фильтр подразделений без пустых
-    div_options = sorted(df["Подразделение_list"].dropna().unique())
-    selected_divs = st.multiselect(
-        "Подразделения",
-        options=div_options,
-        default=div_options
-    )
+  # Фильтр подразделений без "nan"
+div_options = sorted([x for x in df["Подразделение_list"].unique() if str(x).lower() != "nan"])
+selected_divs = st.multiselect(
+    "Подразделения",
+    options=div_options,
+    default=div_options
+)
+
 
     # Тип публикации зависит от выбора Portal/Scopus
     types_options = PORTAL_TYPES if selected_portal_scopus == "Portal" else SCOPUS_TYPES
@@ -92,14 +93,6 @@ with col2:
 # ---------------------
 df_filtered = df[df["ГОД"].isin(selected_years) & df["Подразделение_list"].isin(selected_divs)]
 df_filtered = df_filtered[df_filtered["Тип (по Portal)" if selected_portal_scopus == "Portal" else "Тип (по Scopus)"].isin(selected_types)]
-
-# Фильтр подразделений без "nan"
-div_options = sorted([x for x in df["Подразделение_list"].unique() if x.lower() != "nan"])
-selected_divs = st.multiselect(
-    "Подразделения",
-    options=div_options,
-    default=div_options
-)
 
 # ---------------------
 # Агрегация
