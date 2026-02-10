@@ -3,27 +3,18 @@ import streamlit as st
 import plotly.express as px
 from io import StringIO
 
-# --------------------------------------------------
+# ---------------------
 # Настройки типов публикаций
-# --------------------------------------------------
+# ---------------------
 PORTAL_TYPES = [
-    "Статья",
-    "Труды конференций",
-    "Монографии",
-    "Учебные пособия",
-    "Учебники",
-    "Сборники статей"
+    "Статья", "Труды конференций", "Монографии", 
+    "Учебные пособия", "Учебники", "Сборники статей"
 ]
+SCOPUS_TYPES = ["Article", "Conference Paper", "Book"]
 
-SCOPUS_TYPES = [
-    "Article",
-    "Conference Paper",
-    "Book"
-]
-
-# --------------------------------------------------
-# Streamlit UI
-# --------------------------------------------------
+# ---------------------
+# Streamlit
+# ---------------------
 st.set_page_config(page_title="Графики публикаций НИУ ВШЭ", layout="wide")
 st.title("📊 Публикации НИУ ВШЭ: Portal и Scopus")
 
@@ -31,9 +22,9 @@ uploaded_file = st.file_uploader("Загрузите CSV-файл (раздел�
 if uploaded_file is None:
     st.stop()
 
-# --------------------------------------------------
-# Функция загрузки CSV
-# --------------------------------------------------
+# ---------------------
+# Загрузка CSV
+# ---------------------
 def load_csv(uploaded_file):
     encodings = ["utf-8-sig", "utf-8", "cp1251", "windows-1251"]
     for enc in encodings:
@@ -48,48 +39,57 @@ def load_csv(uploaded_file):
 
 df = load_csv(uploaded_file)
 
-# --------------------------------------------------
-# Обработка данных
-# --------------------------------------------------
+# ---------------------
+# Обработка
+# ---------------------
 df["Фракционный балл"] = pd.to_numeric(df["Фракционный балл"], errors="coerce").fillna(0)
 df["Подразделение_list"] = df["Подразделение (широко)"].fillna("").apply(lambda x: [i.strip() for i in x.split(";") if i.strip()])
 df = df.explode("Подразделение_list")
 div_cnt = df.groupby("НАЗВАНИЕ")["Подразделение_list"].transform("count").replace(0,1)
 df["fractional_score_adj"] = df["Фракционный балл"] / div_cnt
 
-# --------------------------------------------------
-# Отбор последних 3 лет
-# --------------------------------------------------
+# Берём последние 3 года
 df = df[df["ГОД"] >= df["ГОД"].max() - 2]
 
-# --------------------------------------------------
-# Фильтры справа
-# --------------------------------------------------
-st.subheader("Фильтры")
-
-col1, col2 = st.columns([4,1])  # левая зона для графиков, правая для фильтров
-
-# Преобразуем все подразделения в строки (если вдруг NaN или списки)
+# Преобразуем ГОД и Подразделение в строку (для категориальных цветов)
+df["ГОД"] = df["ГОД"].astype(str)
 df["Подразделение_list"] = df["Подразделение_list"].astype(str)
 
+# ---------------------
+# Фильтры справа (выпадающие списки)
+# ---------------------
+col1, col2 = st.columns([4,1])
 with col2:
     selected_years = st.multiselect(
-        "Выберите годы",
-        options=sorted(df["ГОД"].dropna().unique()),
-        default=sorted(df["ГОД"].dropna().unique())
+        "Годы",
+        options=sorted(df["ГОД"].unique()),
+        default=sorted(df["ГОД"].unique())
     )
+
     selected_divs = st.multiselect(
         "Подразделения",
-        options=sorted(df["Подразделение_list"].dropna().unique()),
-        default=sorted(df["Подразделение_list"].dropna().unique())
+        options=sorted(df["Подразделение_list"].unique()),
+        default=sorted(df["Подразделение_list"].unique())
     )
 
+    selected_portal_types = st.multiselect(
+        "Типы публикаций (Portal)",
+        options=PORTAL_TYPES,
+        default=PORTAL_TYPES
+    )
+
+    selected_scopus_types = st.multiselect(
+        "Типы публикаций (Scopus)",
+        options=SCOPUS_TYPES,
+        default=SCOPUS_TYPES
+    )
+
+# Фильтрация
 df = df[df["ГОД"].isin(selected_years) & df["Подразделение_list"].isin(selected_divs)]
 
-
-# --------------------------------------------------
-# Агрегация данных
-# --------------------------------------------------
+# ---------------------
+# Агрегация
+# ---------------------
 def aggregate_data(df, types_list, portal=True):
     if portal:
         df_filtered = df[df["Тип (по Portal)"].isin(types_list)]
@@ -101,12 +101,12 @@ def aggregate_data(df, types_list, portal=True):
     )
     return agg
 
-portal_df = aggregate_data(df, PORTAL_TYPES, portal=True)
-scopus_df = aggregate_data(df, SCOPUS_TYPES, portal=False)
+portal_df = aggregate_data(df, selected_portal_types, portal=True)
+scopus_df = aggregate_data(df, selected_scopus_types, portal=False)
 
-# --------------------------------------------------
+# ---------------------
 # Построение графиков
-# --------------------------------------------------
+# ---------------------
 def draw_chart(df, title):
     if df.empty:
         st.warning(f"Нет данных для {title}")
@@ -143,14 +143,11 @@ def draw_chart(df, title):
         st.plotly_chart(fig_pub, use_container_width=True)
         st.plotly_chart(fig_frac, use_container_width=True)
 
-# --------------------------------------------------
+# ---------------------
 # Вывод графиков
-# --------------------------------------------------
+# ---------------------
 tab1, tab2 = st.tabs(["Portal", "Scopus"])
-
 with tab1:
     draw_chart(portal_df, "Portal")
-
 with tab2:
     draw_chart(scopus_df, "Scopus")
-
