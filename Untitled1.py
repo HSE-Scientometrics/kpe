@@ -7,7 +7,7 @@ from io import StringIO
 # Настройки типов публикаций
 # ---------------------
 PORTAL_TYPES = [
-    "Статья", "Труды конференций", "Монографии", 
+    "Статья", "Труды конференций", "Монографии",
     "Учебные пособия", "Учебники", "Сборники статей"
 ]
 SCOPUS_TYPES = ["Article", "Conference Paper", "Book"]
@@ -15,7 +15,7 @@ SCOPUS_TYPES = ["Article", "Conference Paper", "Book"]
 # ---------------------
 # Streamlit
 # ---------------------
-st.set_page_config(page_title="Графики публикаций НИУ ВШЭ", layout="wide")
+st.set_page_config(page_title="График публикаций НИУ ВШЭ", layout="wide")
 st.title("📊 Публикации НИУ ВШЭ: Portal и Scopus")
 
 uploaded_file = st.file_uploader("Загрузите CSV-файл (разделитель ;)", type=["csv"])
@@ -60,6 +60,11 @@ df["Подразделение_list"] = df["Подразделение_list"].as
 # ---------------------
 col1, col2 = st.columns([4,1])
 with col2:
+    selected_portal_scopus = st.selectbox(
+        "Источник данных",
+        options=["Portal", "Scopus"]
+    )
+
     selected_years = st.multiselect(
         "Годы",
         options=sorted(df["ГОД"].unique()),
@@ -72,82 +77,69 @@ with col2:
         default=sorted(df["Подразделение_list"].unique())
     )
 
-    selected_portal_types = st.multiselect(
-        "Типы публикаций (Portal)",
-        options=PORTAL_TYPES,
-        default=PORTAL_TYPES
+    # Тип публикации зависит от выбора Portal/Scopus
+    if selected_portal_scopus == "Portal":
+        types_options = PORTAL_TYPES
+    else:
+        types_options = SCOPUS_TYPES
+
+    selected_types = st.multiselect(
+        f"Тип публикаций ({selected_portal_scopus})",
+        options=types_options,
+        default=types_options
     )
 
-    selected_scopus_types = st.multiselect(
-        "Типы публикаций (Scopus)",
-        options=SCOPUS_TYPES,
-        default=SCOPUS_TYPES
-    )
+# ---------------------
+# Фильтрация данных
+# ---------------------
+df_filtered = df[df["ГОД"].isin(selected_years) & df["Подразделение_list"].isin(selected_divs)]
 
-# Фильтрация
-df = df[df["ГОД"].isin(selected_years) & df["Подразделение_list"].isin(selected_divs)]
+if selected_portal_scopus == "Portal":
+    df_filtered = df_filtered[df_filtered["Тип (по Portal)"].isin(selected_types)]
+else:
+    df_filtered = df_filtered[df_filtered["Тип (по Scopus)"].isin(selected_types)]
 
 # ---------------------
 # Агрегация
 # ---------------------
-def aggregate_data(df, types_list, portal=True):
-    if portal:
-        df_filtered = df[df["Тип (по Portal)"].isin(types_list)]
-    else:
-        df_filtered = df[df["Тип (по Scopus)"].isin(types_list)]
-    agg = df_filtered.groupby(["ГОД", "Подразделение_list"], as_index=False).agg(
-        publications_cnt=("НАЗВАНИЕ", "nunique"),
-        fractional_score_sum=("fractional_score_adj", "sum")
-    )
-    return agg
-
-portal_df = aggregate_data(df, selected_portal_types, portal=True)
-scopus_df = aggregate_data(df, selected_scopus_types, portal=False)
+agg_df = df_filtered.groupby(["ГОД", "Подразделение_list"], as_index=False).agg(
+    publications_cnt=("НАЗВАНИЕ", "nunique"),
+    fractional_score_sum=("fractional_score_adj", "sum")
+)
 
 # ---------------------
-# Построение графиков
+# Построение графика
 # ---------------------
-def draw_chart(df, title):
-    if df.empty:
-        st.warning(f"Нет данных для {title}")
-        return
-
-    order = df.groupby("Подразделение_list")["publications_cnt"].sum().sort_values(ascending=False).index
-    years = sorted(df["ГОД"].unique())
-    colors = px.colors.qualitative.Safe  # фиксированная палитра
+if agg_df.empty:
+    st.warning("Нет данных для выбранных фильтров")
+else:
+    order = agg_df.groupby("Подразделение_list")["publications_cnt"].sum().sort_values(ascending=False).index
+    years = sorted(agg_df["ГОД"].unique())
+    colors = px.colors.qualitative.Safe
     color_map = {year: colors[i % len(colors)] for i, year in enumerate(years)}
 
     fig_pub = px.bar(
-        df,
+        agg_df,
         x="Подразделение_list",
         y="publications_cnt",
         color="ГОД",
         color_discrete_map=color_map,
         category_orders={"Подразделение_list": order},
         barmode="group",
-        title=f"{title}: публикации"
+        title=f"{selected_portal_scopus}: публикации"
     )
 
     fig_frac = px.bar(
-        df,
+        agg_df,
         x="Подразделение_list",
         y="fractional_score_sum",
         color="ГОД",
         color_discrete_map=color_map,
         category_orders={"Подразделение_list": order},
         barmode="group",
-        title=f"{title}: фракционный балл"
+        title=f"{selected_portal_scopus}: фракционный балл"
     )
 
     with col1:
         st.plotly_chart(fig_pub, use_container_width=True)
         st.plotly_chart(fig_frac, use_container_width=True)
-
-# ---------------------
-# Вывод графиков
-# ---------------------
-tab1, tab2 = st.tabs(["Portal", "Scopus"])
-with tab1:
-    draw_chart(portal_df, "Portal")
-with tab2:
-    draw_chart(scopus_df, "Scopus")
