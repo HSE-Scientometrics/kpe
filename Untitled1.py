@@ -71,18 +71,16 @@ with col2:
         default=sorted(df["ГОД"].unique())
     )
 
+    # Фильтр подразделений без пустых
+    div_options = sorted(df["Подразделение_list"].dropna().unique())
     selected_divs = st.multiselect(
         "Подразделения",
-        options=sorted(df["Подразделение_list"].unique()),
-        default=sorted(df["Подразделение_list"].unique())
+        options=div_options,
+        default=div_options
     )
 
     # Тип публикации зависит от выбора Portal/Scopus
-    if selected_portal_scopus == "Portal":
-        types_options = PORTAL_TYPES
-    else:
-        types_options = SCOPUS_TYPES
-
+    types_options = PORTAL_TYPES if selected_portal_scopus == "Portal" else SCOPUS_TYPES
     selected_types = st.multiselect(
         f"Тип публикаций ({selected_portal_scopus})",
         options=types_options,
@@ -93,11 +91,7 @@ with col2:
 # Фильтрация данных
 # ---------------------
 df_filtered = df[df["ГОД"].isin(selected_years) & df["Подразделение_list"].isin(selected_divs)]
-
-if selected_portal_scopus == "Portal":
-    df_filtered = df_filtered[df_filtered["Тип (по Portal)"].isin(selected_types)]
-else:
-    df_filtered = df_filtered[df_filtered["Тип (по Scopus)"].isin(selected_types)]
+df_filtered = df_filtered[df_filtered["Тип (по Portal)" if selected_portal_scopus == "Portal" else "Тип (по Scopus)"].isin(selected_types)]
 
 # ---------------------
 # Агрегация
@@ -136,12 +130,4 @@ else:
         y="fractional_score_sum",
         color="ГОД",
         color_discrete_map=color_map,
-        category_orders={"Подразделение_list": order},
-        barmode="group",
-        title=f"{selected_portal_scopus}: фракционный балл",
-        labels={"Подразделение_list": "Подразделение", "fractional_score_sum": "Фракционный балл", "ГОД": "Год"}
-    )
-
-    with col1:
-        st.plotly_chart(fig_pub, use_container_width=True)
-        st.plotly_chart(fig_frac, use_container_width=True)
+        ca
