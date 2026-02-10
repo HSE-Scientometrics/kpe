@@ -60,6 +60,7 @@ df = df.explode("Подразделение_list")
 df = df[df["Подразделение_list"].str.lower() != "nan"]
 df = df[df["Подразделение_list"] != ""]
 df["Подразделение_list"] = df["Подразделение_list"].astype(str)
+df = df[~df["Подразделение_list"].str.lower().isin(["nan", ""])]
 
 # ---------------------
 # Последние 3 года
