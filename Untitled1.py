@@ -161,25 +161,30 @@ except Exception as e:
     st.stop()
 
 # --------------------------------------------------
-# Взрыв + фракционный балл
+# Взрыв + фракционный балл (исправленный)
 # --------------------------------------------------
 
-st.subheader("6️⃣ Фракционный учёт")
+st.subheader("6️⃣ Фракционный учёт (без ошибок)")
 
 try:
     reestr = reestr.explode("Подразделение_list")
 
-    div_cnt = (
-        reestr.groupby("НАЗВАНИЕ")["Подразделение_list"]
-        .transform("count")
-    )
+    # Приведение фракционного балла к числу
+    reestr["Фракционный балл"] = pd.to_numeric(
+        reestr["Фракционный балл"], errors="coerce"
+    ).fillna(0)
+
+    # Кол-во подразделений на публикацию
+    div_cnt = reestr.groupby("НАЗВАНИЕ")["Подразделение_list"].transform("count")
+    div_cnt = div_cnt.replace(0, 1)  # чтобы не делить на ноль
 
     reestr["fractional_score_adj"] = reestr["Фракционный балл"] / div_cnt
+
     st.success("Фракционный балл рассчитан")
 except Exception as e:
-    st.error("❌ Ошибка при расчёте фракционного балла")
-    st.exception(e)
-    st.stop()
+    st.warning("⚠️ Проблемы с фракционным баллом, используем нули")
+    reestr["fractional_score_adj"] = 0
+
 
 # --------------------------------------------------
 # Агрегации
