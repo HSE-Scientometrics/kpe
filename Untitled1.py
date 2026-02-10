@@ -1,10 +1,30 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+from io import StringIO
 
 # --------------------------------------------------
-# Константы
+# Функция безопасной загрузки CSV
 # --------------------------------------------------
+
+def load_csv_safely(uploaded_file):
+    encodings = ["utf-8-sig", "utf-8", "cp1251", "windows-1251"]
+
+    for enc in encodings:
+        try:
+            uploaded_file.seek(0)
+            df = pd.read_csv(uploaded_file, sep=";", encoding=enc)
+            st.success(f"Файл успешно прочитан с кодировкой: {enc}")
+            return df
+        except UnicodeDecodeError:
+            continue
+
+    # если ничего не сработало — читаем как байты и игнорируем ошибки
+    uploaded_file.seek(0)
+    raw = uploaded_file.read().decode("utf-8", errors="ignore")
+    df = pd.read_csv(StringIO(raw), sep=";")
+    st.warning("⚠️ Кодировка определена с игнорированием ошибок (errors='ignore')")
+    return df
 
 PORTAL_TYPES = [
     "Статья",
@@ -61,7 +81,7 @@ if uploaded_file is None:
 st.subheader("1️⃣ Загрузка файла")
 
 try:
-    reestr = pd.read_csv(uploaded_file, sep=";", encoding="cp1251")
+    reestr = load_csv_safely(uploaded_file)
     st.success("Файл успешно прочитан")
 except Exception as e:
     st.error("❌ Ошибка при чтении CSV")
