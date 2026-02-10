@@ -1,43 +1,24 @@
 import pandas as pd
-import streamlit as st
-import plotly.express as px
-from io import StringIO
 
 # ---------------------
-# Настройки типов публикаций
+# Загрузка CSV
 # ---------------------
-PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", 
-                "Учебные пособия", "Учебники", "Сборники статей"]
-SCOPUS_TYPES = ["Article", "Conference Paper", "Book"]
+file_path = "НЦ_Ежеквартальный_реестр_2025_IV_квартал_полный.csv"
+encodings = ["utf-8-sig", "utf-8", "cp1251", "windows-1251"]
 
-HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
-
-# ---------------------
-# Streamlit
-# ---------------------
-st.set_page_config(page_title="График публикаций НИУ ВШЭ", layout="wide")
-st.title("📊 Публикации НИУ ВШЭ: Portal и Scopus")
-
-uploaded_file = st.file_uploader("Загрузите CSV-файл (разделитель ;)", type=["csv"])
-if uploaded_file is None:
-    st.stop()
-
-# ---------------------
-# Загрузка CSV с поддержкой разных кодировок
-# ---------------------
-def load_csv(uploaded_file):
-    encodings = ["utf-8-sig", "utf-8", "cp1251", "windows-1251"]
-    for enc in encodings:
-        try:
-            uploaded_file.seek(0)
-            return pd.read_csv(uploaded_file, sep=";", encoding=enc)
-        except:
-            continue
-    uploaded_file.seek(0)
-    raw = uploaded_file.read().decode("utf-8", errors="ignore")
-    return pd.read_csv(StringIO(raw), sep=";")
-
-df = load_csv(uploaded_file)
+for enc in encodings:
+    try:
+        df = pd.read_csv(file_path, sep=";", encoding=enc)
+        print(f"Файл успешно прочитан с кодировкой: {enc}")
+        break
+    except Exception as e:
+        continue
+else:
+    from io import StringIO
+    with open(file_path, "rb") as f:
+        raw = f.read().decode("utf-8", errors="ignore")
+    df = pd.read_csv(StringIO(raw), sep=";")
+    print("Кодировка определена с игнорированием ошибок")
 
 # ---------------------
 # Преобразование фракционного балла
@@ -47,6 +28,7 @@ df["Фракционный балл"] = pd.to_numeric(df["Фракционный
 # ---------------------
 # Фильтрация по Список НИУ ВШЭ и Рец тип строгий
 # ---------------------
+HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
 df = df[df["Список НИУ ВШЭ"].isin(HSE_LIST_ALLOWED)]
 df = df[df["Рец тип строгий"] == 1]
 
@@ -57,100 +39,54 @@ df["Подразделение_list"] = df["Подразделение (широ
     lambda x: [i.strip() for i in x.split(";") if i.strip()]
 )
 df = df.explode("Подразделение_list")
+
+# ---------------------
+# Убираем подразделения с 'nan' и пустые
+# ---------------------
+df["Подразделение_list"] = df["Подразделение_list"].astype(str)
 df = df[df["Подразделение_list"].str.lower() != "nan"]
 df = df[df["Подразделение_list"] != ""]
-df["Подразделение_list"] = df["Подразделение_list"].astype(str)
 
 # ---------------------
 # Последние 3 года
 # ---------------------
 last_three_years = df["ГОД"].max() - 2
 df = df[df["ГОД"] >= last_three_years]
-df["ГОД"] = df["ГОД"].astype(str)
 
 # ---------------------
-# Фильтры справа
+# Таблица 1: Тип (по Portal)
 # ---------------------
-col1, col2 = st.columns([4,1])
-with col2:
-    selected_portal_scopus = st.selectbox(
-        "Источник данных",
-        options=["Portal", "Scopus"]
-    )
+PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", 
+                "Учебные пособия", "Учебники", "Сборники статей"]
 
-    selected_years = st.multiselect(
-        "Годы",
-        options=sorted(df["ГОД"].unique()),
-        default=sorted(df["ГОД"].unique())
-    )
+portal_df = df[df["Тип (по Portal)"].isin(PORTAL_TYPES)]
 
-    div_options = sorted(df["Подразделение_list"].unique())
-    selected_divs = st.multiselect(
-        "Подразделения",
-        options=div_options,
-        default=div_options
-    )
-
-    types_options = PORTAL_TYPES if selected_portal_scopus == "Portal" else SCOPUS_TYPES
-    selected_types = st.multiselect(
-        f"Тип публикаций ({selected_portal_scopus})",
-        options=types_options,
-        default=types_options
-    )
+portal_agg = portal_df.groupby(
+    ["ГОД", "Подразделение_list"], as_index=False
+).agg(
+    publications_cnt=('НАЗВАНИЕ', 'nunique'),
+    fractional_score_sum=('Фракционный балл', 'sum')
+).sort_values(['ГОД', 'publications_cnt'], ascending=[False, False]).reset_index(drop=True)
 
 # ---------------------
-# Фильтрация данных
+# Таблица 2: Тип (по Scopus)
 # ---------------------
-type_col = "Тип (по Portal)" if selected_portal_scopus == "Portal" else "Тип (по Scopus)"
-df_filtered = df[
-    df["ГОД"].isin(selected_years) &
-    df["Подразделение_list"].isin(selected_divs) &
-    df[type_col].isin(selected_types)
-]
+SCOPUS_TYPES = ["Article", "Conference Paper", "Book"]
+
+scopus_df = df[df["Тип (по Scopus)"].isin(SCOPUS_TYPES)]
+
+scopus_agg = scopus_df.groupby(
+    ["ГОД", "Подразделение_list"], as_index=False
+).agg(
+    publications_cnt=('НАЗВАНИЕ', 'nunique'),
+    fractional_score_sum=('Фракционный балл', 'sum')
+).sort_values(['ГОД', 'publications_cnt'], ascending=[False, False]).reset_index(drop=True)
 
 # ---------------------
-# Агрегация
+# Вывод
 # ---------------------
-agg_df = df_filtered.groupby(["ГОД", "Подразделение_list"], as_index=False).agg(
-    publications_cnt=("НАЗВАНИЕ", "nunique"),
-    fractional_score_sum=("Фракционный балл", "sum")
-)
+print("Таблица по Portal:")
+display(portal_agg.head(20))
 
-# ---------------------
-# Построение графиков
-# ---------------------
-if agg_df.empty:
-    st.warning("Нет данных для выбранных фильтров")
-else:
-    order = agg_df.groupby("Подразделение_list")["publications_cnt"].sum().sort_values(ascending=False).index
-    years = sorted(agg_df["ГОД"].unique())
-    colors = px.colors.qualitative.Safe
-    color_map = {year: colors[i % len(colors)] for i, year in enumerate(years)}
-
-    fig_pub = px.bar(
-        agg_df,
-        x="Подразделение_list",
-        y="publications_cnt",
-        color="ГОД",
-        color_discrete_map=color_map,
-        category_orders={"Подразделение_list": order},
-        barmode="group",
-        title=f"{selected_portal_scopus}: публикации",
-        labels={"Подразделение_list": "Подразделение", "publications_cnt": "Количество публикаций", "ГОД": "Год"}
-    )
-
-    fig_frac = px.bar(
-        agg_df,
-        x="Подразделение_list",
-        y="fractional_score_sum",
-        color="ГОД",
-        color_discrete_map=color_map,
-        category_orders={"Подразделение_list": order},
-        barmode="group",
-        title=f"{selected_portal_scopus}: фракционный балл",
-        labels={"Подразделение_list": "Подразделение", "fractional_score_sum": "Фракционный балл", "ГОД": "Год"}
-    )
-
-    with col1:
-        st.plotly_chart(fig_pub, use_container_width=True)
-        st.plotly_chart(fig_frac, use_container_width=True)
+print("Таблица по Scopus:")
+display(scopus_agg.head(20))
