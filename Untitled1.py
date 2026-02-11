@@ -4,26 +4,23 @@ import plotly.express as px
 from io import StringIO
 
 # ---------------------
-# Настройки типов публикаций
+# Настройки
 # ---------------------
-PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", 
-                "Учебные пособия", "Учебники", "Сборники статей"]
-SCOPUS_TYPES = ["Article", "Conference Paper", "Book"]
-
+PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", "Сборники статей"]
 HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
 
 # ---------------------
 # Streamlit
 # ---------------------
-st.set_page_config(page_title="График публикаций НИУ ВШЭ", layout="wide")
-st.title("📊 Публикации НИУ ВШЭ: Portal и Scopus")
+st.set_page_config(page_title="Публикации НИУ ВШЭ", layout="wide")
+st.title("📊 Публикации НИУ ВШЭ")
 
 uploaded_file = st.file_uploader("Загрузите CSV-файл (разделитель ;)", type=["csv"])
 if uploaded_file is None:
     st.stop()
 
 # ---------------------
-# Загрузка CSV с поддержкой разных кодировок
+# Загрузка CSV
 # ---------------------
 def load_csv(uploaded_file):
     encodings = ["utf-8-sig", "utf-8", "cp1251", "windows-1251"]
@@ -40,15 +37,17 @@ def load_csv(uploaded_file):
 df = load_csv(uploaded_file)
 
 # ---------------------
-# Преобразование фракционного балла
+# Числовые преобразования
 # ---------------------
 df["Фракционный балл"] = pd.to_numeric(df["Фракционный балл"], errors="coerce").fillna(0)
+df["Фракционный балл по порталу"] = pd.to_numeric(
+    df["Фракционный балл по порталу"], errors="coerce"
+).fillna(0)
 
 # ---------------------
-# Фильтрация по Список НИУ ВШЭ и Рец тип строгий
+# Фильтр по списку НИУ ВШЭ
 # ---------------------
 df = df[df["Список НИУ ВШЭ"].isin(HSE_LIST_ALLOWED)]
-df = df[df["Рец тип строгий"] == 1]
 
 # ---------------------
 # Разбор подразделений
@@ -60,7 +59,6 @@ df = df.explode("Подразделение_list")
 df = df[df["Подразделение_list"].str.lower() != "nan"]
 df = df[df["Подразделение_list"] != ""]
 df["Подразделение_list"] = df["Подразделение_list"].astype(str)
-df = df[~df["Подразделение_list"].str.lower().isin(["nan", ""])]
 
 # ---------------------
 # Последние 3 года
@@ -70,13 +68,14 @@ df = df[df["ГОД"] >= last_three_years]
 df["ГОД"] = df["ГОД"].astype(str)
 
 # ---------------------
-# Фильтры справа
+# Фильтры
 # ---------------------
 col1, col2 = st.columns([4,1])
+
 with col2:
-    selected_portal_scopus = st.selectbox(
+    data_source = st.selectbox(
         "Источник данных",
-        options=["Portal", "Scopus"]
+        options=["Portal", "Все публикации"]
     )
 
     selected_years = st.multiselect(
@@ -92,29 +91,50 @@ with col2:
         default=div_options
     )
 
-    types_options = PORTAL_TYPES if selected_portal_scopus == "Portal" else SCOPUS_TYPES
-    selected_types = st.multiselect(
-        f"Тип публикаций ({selected_portal_scopus})",
-        options=types_options,
-        default=types_options
-    )
+    # Фильтр по рецензированию только для "Все публикации"
+    if data_source == "Все публикации":
+        strict_options = sorted(df["Рец тип строгий"].dropna().unique())
+        non_strict_options = sorted(df["Рец тип не строгий"].dropna().unique())
+
+        selected_strict = st.multiselect(
+            "Рец тип строгий",
+            options=strict_options,
+            default=strict_options
+        )
+
+        selected_non_strict = st.multiselect(
+            "Рец тип не строгий",
+            options=non_strict_options,
+            default=non_strict_options
+        )
 
 # ---------------------
 # Фильтрация данных
 # ---------------------
-type_col = "Тип (по Portal)" if selected_portal_scopus == "Portal" else "Тип (по Scopus)"
 df_filtered = df[
     df["ГОД"].isin(selected_years) &
-    df["Подразделение_list"].isin(selected_divs) &
-    df[type_col].isin(selected_types)
+    df["Подразделение_list"].isin(selected_divs)
 ]
+
+if data_source == "Portal":
+    df_filtered = df_filtered[
+        df_filtered["Тип (по Portal)"].isin(PORTAL_TYPES)
+    ]
+    frac_column = "Фракционный балл по порталу"
+
+else:
+    df_filtered = df_filtered[
+        df_filtered["Рец тип строгий"].isin(selected_strict) &
+        df_filtered["Рец тип не строгий"].isin(selected_non_strict)
+    ]
+    frac_column = "Фракционный балл"
 
 # ---------------------
 # Агрегация
 # ---------------------
 agg_df = df_filtered.groupby(["ГОД", "Подразделение_list"], as_index=False).agg(
     publications_cnt=("НАЗВАНИЕ", "nunique"),
-    fractional_score_sum=("Фракционный балл", "sum")
+    fractional_score_sum=(frac_column, "sum")
 )
 
 # ---------------------
@@ -123,7 +143,9 @@ agg_df = df_filtered.groupby(["ГОД", "Подразделение_list"], as_i
 if agg_df.empty:
     st.warning("Нет данных для выбранных фильтров")
 else:
-    order = agg_df.groupby("Подразделение_list")["publications_cnt"].sum().sort_values(ascending=False).index
+    order = agg_df.groupby("Подразделение_list")["publications_cnt"] \
+                  .sum().sort_values(ascending=False).index
+
     years = sorted(agg_df["ГОД"].unique())
     colors = px.colors.qualitative.Safe
     color_map = {year: colors[i % len(colors)] for i, year in enumerate(years)}
@@ -133,11 +155,15 @@ else:
         x="Подразделение_list",
         y="publications_cnt",
         color="ГОД",
-        color_discrete_map=color_map,
         category_orders={"Подразделение_list": order},
+        color_discrete_map=color_map,
         barmode="group",
-        title=f"{selected_portal_scopus}: публикации",
-        labels={"Подразделение_list": "Подразделение", "publications_cnt": "Количество публикаций", "ГОД": "Год"}
+        title=f"{data_source}: количество публикаций",
+        labels={
+            "Подразделение_list": "Подразделение",
+            "publications_cnt": "Количество публикаций",
+            "ГОД": "Год"
+        }
     )
 
     fig_frac = px.bar(
@@ -145,11 +171,15 @@ else:
         x="Подразделение_list",
         y="fractional_score_sum",
         color="ГОД",
-        color_discrete_map=color_map,
         category_orders={"Подразделение_list": order},
+        color_discrete_map=color_map,
         barmode="group",
-        title=f"{selected_portal_scopus}: фракционный балл",
-        labels={"Подразделение_list": "Подразделение", "fractional_score_sum": "Фракционный балл", "ГОД": "Год"}
+        title=f"{data_source}: фракционный балл",
+        labels={
+            "Подразделение_list": "Подразделение",
+            "fractional_score_sum": "Фракционный балл",
+            "ГОД": "Год"
+        }
     )
 
     with col1:
