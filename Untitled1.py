@@ -52,14 +52,24 @@ df = df[df["Список НИУ ВШЭ"].isin(HSE_LIST_ALLOWED)]
 # ---------------------
 # Разбор подразделений
 # ---------------------
-df["Подразделение_list"] = df["Подразделение (широко)"].fillna("").apply(
-    lambda x: [i.strip() for i in x.split(";") if i.strip()]
+df["Подразделение_list"] = (
+    df["Подразделение (широко)"]
+    .fillna("")
+    .astype(str)
+    .apply(lambda x: [i.strip() for i in x.split(";") if i.strip()])
 )
 
 df = df.explode("Подразделение_list")
-df = df[df["Подразделение_list"].str.lower() != "nan"]
-df = df[df["Подразделение_list"] != ""]
-df["Подразделение_list"] = df["Подразделение_list"].astype(str)
+
+# Полная очистка мусорных значений
+df["Подразделение_list"] = df["Подразделение_list"].astype(str).str.strip()
+
+df = df[
+    (df["Подразделение_list"] != "") &
+    (df["Подразделение_list"].str.lower() != "nan") &
+    (df["Подразделение_list"].str.lower() != "none")
+]
+
 
 # ---------------------
 # Последние 3 года
