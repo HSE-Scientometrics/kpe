@@ -6,7 +6,7 @@ from io import StringIO
 # ---------------------
 # Константы
 # ---------------------
-PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", "Сборники статей"]
+PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", "Сборники статей", "Рецензия"]
 HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
 
 # ---------------------
@@ -146,7 +146,7 @@ else:
 agg_df = df_filtered.groupby(
     ["ГОД", "Подразделение_list"], as_index=False
 ).agg(
-    publications_cnt=("НАЗВАНИЕ", "nunique"),
+    publications_cnt=("НАЗВАНИЕ", "count"),
     fractional_score_sum=(frac_column, "sum")
 )
 
