@@ -4,7 +4,7 @@ import plotly.express as px
 from io import StringIO
 
 # ---------------------
-# Настройки
+# Константы
 # ---------------------
 PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", "Сборники статей"]
 HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
@@ -37,7 +37,7 @@ def load_csv(uploaded_file):
 df = load_csv(uploaded_file)
 
 # ---------------------
-# Числовые преобразования
+# Преобразование числовых колонок
 # ---------------------
 df["Фракционный балл"] = pd.to_numeric(df["Фракционный балл"], errors="coerce").fillna(0)
 df["Фракционный балл по порталу"] = pd.to_numeric(
@@ -55,6 +55,7 @@ df = df[df["Список НИУ ВШЭ"].isin(HSE_LIST_ALLOWED)]
 df["Подразделение_list"] = df["Подразделение (широко)"].fillna("").apply(
     lambda x: [i.strip() for i in x.split(";") if i.strip()]
 )
+
 df = df.explode("Подразделение_list")
 df = df[df["Подразделение_list"].str.lower() != "nan"]
 df = df[df["Подразделение_list"] != ""]
@@ -68,9 +69,9 @@ df = df[df["ГОД"] >= last_three_years]
 df["ГОД"] = df["ГОД"].astype(str)
 
 # ---------------------
-# Фильтры
+# Интерфейс фильтров
 # ---------------------
-col1, col2 = st.columns([4,1])
+col1, col2 = st.columns([4, 1])
 
 with col2:
     data_source = st.selectbox(
@@ -93,19 +94,19 @@ with col2:
 
     # Фильтр по рецензированию только для "Все публикации"
     if data_source == "Все публикации":
-        strict_options = sorted(df["Рец тип строгий"].dropna().unique())
-        non_strict_options = sorted(df["Рец тип не строгий"].dropna().unique())
+        strict_values = sorted(df["Рец тип строгий"].dropna().unique())
+        non_strict_values = sorted(df["Рец тип не строгий"].dropna().unique())
 
         selected_strict = st.multiselect(
             "Рец тип строгий",
-            options=strict_options,
-            default=strict_options
+            options=strict_values,
+            default=strict_values
         )
 
         selected_non_strict = st.multiselect(
             "Рец тип не строгий",
-            options=non_strict_options,
-            default=non_strict_options
+            options=non_strict_values,
+            default=non_strict_values
         )
 
 # ---------------------
@@ -132,7 +133,9 @@ else:
 # ---------------------
 # Агрегация
 # ---------------------
-agg_df = df_filtered.groupby(["ГОД", "Подразделение_list"], as_index=False).agg(
+agg_df = df_filtered.groupby(
+    ["ГОД", "Подразделение_list"], as_index=False
+).agg(
     publications_cnt=("НАЗВАНИЕ", "nunique"),
     fractional_score_sum=(frac_column, "sum")
 )
