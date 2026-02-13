@@ -6,7 +6,7 @@ from io import StringIO
 # ---------------------
 # Константы
 # ---------------------
-PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", "Сборники статей", "Рецензия"]
+PORTAL_TYPES = ["Статья", "Труды конференций", "Монографии", "Сборники статей"]
 HSE_LIST_ALLOWED = ["A", "B", "A_Book", "A_Conf"]
 
 # ---------------------
@@ -37,9 +37,12 @@ def load_csv(uploaded_file):
 df = load_csv(uploaded_file)
 
 # ---------------------
-# Преобразование числовых колонок
+# Числовые колонки
 # ---------------------
-df["Фракционный балл"] = pd.to_numeric(df["Фракционный балл"], errors="coerce").fillna(0)
+df["Фракционный балл"] = pd.to_numeric(
+    df["Фракционный балл"], errors="coerce"
+).fillna(0)
+
 df["Фракционный балл по порталу"] = pd.to_numeric(
     df["Фракционный балл по порталу"], errors="coerce"
 ).fillna(0)
@@ -61,7 +64,6 @@ df["Подразделение_list"] = (
 
 df = df.explode("Подразделение_list")
 
-# Полная очистка мусорных значений
 df["Подразделение_list"] = df["Подразделение_list"].astype(str).str.strip()
 
 df = df[
@@ -69,7 +71,6 @@ df = df[
     (df["Подразделение_list"].str.lower() != "nan") &
     (df["Подразделение_list"].str.lower() != "none")
 ]
-
 
 # ---------------------
 # Последние 3 года
@@ -102,7 +103,6 @@ with col2:
         default=div_options
     )
 
-    # Фильтр по рецензированию только для "Все публикации"
     if data_source == "Все публикации":
         strict_values = sorted(df["Рец тип строгий"].dropna().unique())
         non_strict_values = sorted(df["Рец тип не строгий"].dropna().unique())
@@ -132,7 +132,6 @@ if data_source == "Portal":
         df_filtered["Тип (по Portal)"].isin(PORTAL_TYPES)
     ]
     frac_column = "Фракционный балл по порталу"
-
 else:
     df_filtered = df_filtered[
         df_filtered["Рец тип строгий"].isin(selected_strict) &
@@ -198,3 +197,31 @@ else:
     with col1:
         st.plotly_chart(fig_pub, use_container_width=True)
         st.plotly_chart(fig_frac, use_container_width=True)
+
+        # ---------------------
+        # Таблицы под графиками
+        # ---------------------
+        st.markdown("### 📋 Таблица: количество публикаций")
+
+        table_pub = agg_df.pivot_table(
+            index="Подразделение_list",
+            columns="ГОД",
+            values="publications_cnt",
+            fill_value=0,
+            aggfunc="sum"
+        ).reindex(order)
+
+        st.dataframe(table_pub, use_container_width=True)
+
+        st.markdown("### 📋 Таблица: фракционный балл")
+
+        table_frac = agg_df.pivot_table(
+            index="Подразделение_list",
+            columns="ГОД",
+            values="fractional_score_sum",
+            fill_value=0,
+            aggfunc="sum"
+        ).reindex(order)
+
+        st.dataframe(table_frac, use_container_width=True)
+
